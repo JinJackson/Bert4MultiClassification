@@ -10,7 +10,7 @@ def readDatas(data_file):
         lines = reader.readlines()
         texts = []
         labels = []
-        for i in range(1, 101):
+        for i in range(1, len(lines)):
             line = lines[i]
             line = line.replace(',', ' [SEP] ', 1)
             a_data = line.split(' [SEP] ')
