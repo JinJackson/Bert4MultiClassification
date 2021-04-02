@@ -26,9 +26,19 @@ batch_size = 2
 save_dir = 'result/model'
 bert_model = 'bert-base-chinese'
 logger = None
+fp16 = True
+fptype = 'O2'
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def train(model, tokenizer, checkpoint):
+
+    if fp16:
+        try:
+            from apex import amp
+        except ImportError:
+            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+    else:
+        amp = None
 
     texts, labels = readDatas(data_file)
     train_X, test_X, train_Y, test_Y = SplitTrainTestData(texts, labels, test_size=0.2)
@@ -55,6 +65,9 @@ def train(model, tokenizer, checkpoint):
     scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=t_total
     )
+
+    if fp16:
+        model, optimizer = amp.initialize(model, optimizer, opt_level=fptype)
 
 
     # 读取断点 optimizer、scheduler
@@ -93,7 +106,11 @@ def train(model, tokenizer, checkpoint):
 
             loss = outputs[0]
 
-            loss.backward()  # 计算出梯度
+            if fp16:
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()  # 计算出梯度
             epoch_loss.append(loss.item())
             optimizer.step()
             scheduler.step()
@@ -107,6 +124,8 @@ def train(model, tokenizer, checkpoint):
         tokenizer.save_pretrained(output_dir)
         # torch.save(args, os.path.join(output_dir, "training_args.bin"))
         logger.debug("Saving model checkpoint to %s", output_dir)
+        if fp16:
+            torch.save(amp.state_dict(), os.path.join(output_dir, "amp.pt"))
         torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
         torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
         logger.debug("Saving optimizer and scheduler states to %s", output_dir)
